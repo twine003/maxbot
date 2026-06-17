@@ -19,6 +19,9 @@ class RunnerConfig:
     enabled: bool = True
     cli: str = "auto"
     system_instruction: str | None = None
+    # Optional specific model to pass to the CLI (e.g. "claude-opus-4-8",
+    # "claude-sonnet-4-6"). None = let the CLI use its default.
+    model: str | None = None
 
 
 @dataclass
@@ -151,6 +154,7 @@ def load_config(config_path: Path | str) -> BotConfig:
             system_instruction=_read_text_field(body.get("system_instruction"), config_dir)
             if "system_instruction" in body
             else None,
+            model=body.get("model"),
         )
     runners_cfg.setdefault("claude", RunnerConfig())
     runners_cfg.setdefault("codex", RunnerConfig(system_instruction=""))

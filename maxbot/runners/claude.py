@@ -17,7 +17,12 @@ from ..connectors.telegram.ui.streaming import (
     reset_stream, safe_edit, stream_update,
 )
 from .base import Runner, RunnerResult
-from ._common import find_in_user_local_bin, patched_env
+from ._common import (
+    CLAUDE_ENV_DROP,
+    CLAUDE_ENV_DROP_PREFIXES,
+    find_in_user_local_bin,
+    patched_env,
+)
 
 if TYPE_CHECKING:
     from ..connectors.telegram.connector import TelegramConnector
@@ -42,12 +47,21 @@ class ClaudeRunner(Runner):
         return "claude"
 
     def build_command(self, prompt: str, session_id: str | None, resume: bool, *, stream: bool = True) -> list[str]:
-        full_prompt = self.get_system_instruction() + prompt
         if resume and session_id:
-            cmd = [self.executable, "-p", full_prompt, "--resume", session_id]
+            cmd = [self.executable, "-p", prompt, "--resume", session_id]
         else:
             sid = session_id or str(uuid.uuid4())
-            cmd = [self.executable, "-p", full_prompt, "--session-id", sid]
+            cmd = [self.executable, "-p", prompt, "--session-id", sid]
+        # System instruction goes via --append-system-prompt-file rather than
+        # being prepended to the prompt: it stays out of the user-visible turn,
+        # appends to Claude's own system prompt, and avoids hitting argv/command
+        # -line length limits (the manifest + ALMA can be many KB).
+        sp_file = self._write_system_prompt_file()
+        if sp_file:
+            cmd += ["--append-system-prompt-file", str(sp_file)]
+        # Pin a specific model if configured (e.g. claude-opus-4-8 / sonnet).
+        if self.runner_config.model:
+            cmd += ["--model", self.runner_config.model]
         if stream:
             # --include-partial-messages → emits content_block_delta events letter-by-letter
             # (Anthropic SDK format), enabling ChatGPT/clawdbot-style live streaming.
@@ -55,6 +69,21 @@ class ClaudeRunner(Runner):
         for tool in self.config.allowed_tools:
             cmd += ["--allowedTools", tool]
         return cmd
+
+    def _write_system_prompt_file(self) -> Path | None:
+        """Persist the current system instruction to a workspace file for
+        --append-system-prompt-file. Rewritten each turn so live changes (e.g.
+        the ALMA wizard updating it) take effect. Returns None if empty."""
+        text = self.get_system_instruction()
+        if not text or not text.strip():
+            return None
+        path = self.config.workspace / ".maxbot_claude_system.md"
+        try:
+            path.write_text(text, encoding="utf-8")
+        except OSError as e:
+            log.warning("could not write system prompt file: %s", e)
+            return None
+        return path
 
     async def run_turn(
         self,
@@ -66,7 +95,11 @@ class ClaudeRunner(Runner):
         worker: "WorkerState",
     ) -> RunnerResult:
         cmd = self.build_command(prompt, session_id, resume, stream=True)
-        env = patched_env(self.executable, drop_keys=("CLAUDECODE",))
+        env = patched_env(
+            self.executable,
+            drop_keys=CLAUDE_ENV_DROP,
+            drop_prefixes=CLAUDE_ENV_DROP_PREFIXES,
+        )
         bot = connector.bot
 
         for attempt in range(1, self.config.max_retries + 1):

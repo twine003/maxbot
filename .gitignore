@@ -19,6 +19,8 @@ deployments/**/sessions.json
 deployments/**/tasks.json
 deployments/**/pending_work.json
 deployments/**/restart_marker
+deployments/**/.maxbot_claude_system.md
+deployments/**/setup_state.json
 deployments/**/media/
 deployments/**/logs/
 deployments/**/data/

@@ -50,6 +50,8 @@ allowed_tools = [
 [runners.claude]
 enabled = true
 cli = "auto"          # "auto" = autodiscover the `claude` CLI on PATH
+# model = "claude-opus-4-8"   # pin a specific model; omit to use the CLI default
+                              # (e.g. claude-opus-4-8, claude-sonnet-4-6)
 
 [runners.codex]
 enabled = true

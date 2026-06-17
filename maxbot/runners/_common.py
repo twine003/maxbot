@@ -62,11 +62,41 @@ def resolve_user_home(executable_path: str) -> Path:
     return Path.home()
 
 
-def patched_env(executable_path: str, drop_keys: tuple[str, ...] = ()) -> dict:
-    """Build a subprocess env with HOME / USERPROFILE / APPDATA corrected for SYSTEM service."""
+# Env vars scrubbed before launching the Claude CLI so inherited shell env can't
+# silently redirect provider routing, the config root, or telemetry to somewhere
+# other than what the deployment intends. NOTE: unlike some wrappers we KEEP
+# ANTHROPIC_API_KEY / *_OAUTH_TOKEN — maxbot's onboarding may set the API key in
+# the deployment .env, and the CLI's own browser login lives in those too.
+CLAUDE_ENV_DROP = (
+    "CLAUDECODE",
+    "ANTHROPIC_BASE_URL",
+    "ANTHROPIC_CUSTOM_HEADERS",
+    "CLAUDE_CONFIG_DIR",
+    "CLAUDE_CODE_ENTRYPOINT",
+    "CLAUDE_CODE_USE_BEDROCK",
+    "CLAUDE_CODE_USE_VERTEX",
+    "CLAUDE_CODE_USE_FOUNDRY",
+)
+CLAUDE_ENV_DROP_PREFIXES = ("OTEL_",)
+
+
+def patched_env(
+    executable_path: str,
+    drop_keys: tuple[str, ...] = (),
+    drop_prefixes: tuple[str, ...] = (),
+) -> dict:
+    """Build a subprocess env with HOME / USERPROFILE / APPDATA corrected for SYSTEM service.
+
+    `drop_keys` removes exact env var names; `drop_prefixes` removes every var
+    whose name starts with one of the given prefixes (e.g. "OTEL_").
+    """
     env = os.environ.copy()
     for k in drop_keys:
         env.pop(k, None)
+    if drop_prefixes:
+        for k in list(env):
+            if k.startswith(drop_prefixes):
+                env.pop(k, None)
     home = resolve_user_home(executable_path)
     env["HOME"] = str(home)
     if sys.platform == "win32":

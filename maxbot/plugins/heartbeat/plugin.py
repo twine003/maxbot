@@ -15,7 +15,7 @@ from datetime import datetime, timedelta, timezone
 from typing import TYPE_CHECKING
 
 from ...connectors.telegram.ui.attachments import send_long_to_chat
-from ...runners._common import patched_env
+from ...runners._common import CLAUDE_ENV_DROP, CLAUDE_ENV_DROP_PREFIXES, patched_env
 from ..base import Plugin
 
 
@@ -171,7 +171,14 @@ class HeartbeatPlugin(Plugin):
         else:
             cmd = runner.build_command(prompt, sid, resume)
 
-        env = patched_env(runner.executable, drop_keys=("CLAUDECODE",) if model == "claude" else ())
+        if model == "claude":
+            env = patched_env(
+                runner.executable,
+                drop_keys=CLAUDE_ENV_DROP,
+                drop_prefixes=CLAUDE_ENV_DROP_PREFIXES,
+            )
+        else:
+            env = patched_env(runner.executable)
 
         proc = await asyncio.create_subprocess_exec(
             *cmd,

@@ -15,6 +15,7 @@ if TYPE_CHECKING:
     from .connectors.telegram.connector import TelegramConnector
     from .core.pending_work import PendingWorkStore
     from .core.sessions import SessionStore
+    from .core.setup_state import SetupState
     from .core.tasks import TaskStore
     from .runners.base import RunnerRegistry
     from .workers.manager import WorkerManager
@@ -29,6 +30,8 @@ class BotContext:
     pending_work: "PendingWorkStore"
     runners: "RunnerRegistry"
     workers: "WorkerManager"
+    # First-run onboarding state (pairing / agent setup / ALMA wizard).
+    setup: "SetupState" = None  # type: ignore[assignment]
     # Free-form bucket for plugins that need to share state with each other
     shared: dict[str, Any] = None  # type: ignore[assignment]
 

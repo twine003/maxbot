@@ -66,8 +66,9 @@ REM scaffold a deployment from the template
 xcopy /E /I deployments\example deployments\my-bot
 cd deployments\my-bot
 copy .env.example .env
-REM edit .env: TELEGRAM_BOT_TOKEN + ALLOWED_CHAT_IDS
+REM edit .env: TELEGRAM_BOT_TOKEN (the only secret needed up front)
 start.cmd
+REM then finish setup from Telegram — see "First-run onboarding" below
 ```
 
 To survive logouts, pin `start.cmd` as a Windows Scheduled Task with "Run whether user is logged on or not".
@@ -83,6 +84,32 @@ python install.py            # venv + install + scaffold deployments/my-bot
 ```
 
 To run unattended, point a systemd unit's `ExecStart` at `start.sh`.
+
+## First-run onboarding (pairing + agent setup)
+
+A fresh bot configures itself by chatting with you — the only thing you set in a
+file is `TELEGRAM_BOT_TOKEN`. State is tracked in `<workspace>/setup_state.json`
+and the wizard runs at a high handler priority (group -50), intercepting all
+messages until setup is `done`, then disabling itself.
+
+Stages:
+
+1. **pairing** — on boot the console prints a one-time `PAIRING CODE`. The first
+   chat that sends it to the bot is claimed as the owner and persisted as
+   `paired_chat_id` (merged into `allowed_chat_ids` on every boot). An empty
+   allowlist denies everyone, so an unpaired bot never answers strangers.
+2. **agent_select** — the bot asks for Claude Code or Codex and sets that as the
+   active model for the owner chat.
+3. **agent_install** — runs `npm install -g <package>` for the chosen CLI
+   (`@anthropic-ai/claude-code` or `@openai/codex`). If `npm` is missing it asks
+   the user to install Node.js first.
+4. **agent_auth** — the user pastes an API key (written to the deployment `.env`
+   as `ANTHROPIC_API_KEY` / `OPENAI_API_KEY`) or confirms a browser login.
+5. **alma** — a 6-question wizard writes `system_instruction.md` plus a
+   `persona/` folder (`ALMA.md`, `REGLAS.md`, `CONTEXTO.md`) and applies the new
+   system instruction live (runners read `config.system_instruction` per turn).
+
+Re-run onboarding by deleting `setup_state.json`.
 
 ## How to activate / deactivate plugins
 

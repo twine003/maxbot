@@ -13,10 +13,12 @@ from .connectors.telegram.connector import TelegramConnector
 from .context import BotContext
 from .core.pending_work import PendingWorkStore
 from .core.sessions import SessionStore
+from .core.setup_state import SetupState
 from .core.tasks import TaskStore
 from .handlers import capabilities as capabilities_handler
 from .handlers import core as core_handlers
 from .handlers import messages as message_handlers
+from . import onboarding
 from .plugins.loader import load_plugins
 from .runners.base import RunnerRegistry
 from .runners.claude import ClaudeRunner
@@ -60,6 +62,12 @@ def build_app(config_path: Path | str) -> tuple[Application, BotContext]:
     tasks_store = TaskStore(config.tasks_file)
     pending = PendingWorkStore(config.pending_work_file)
     runners = build_runner_registry(config, sessions)
+
+    # First-run onboarding. A previously-paired chat is added to the allowlist so
+    # auth keeps working across restarts.
+    setup = SetupState(config.workspace / "setup_state.json")
+    if setup.paired_chat_id is not None:
+        config.allowed_chat_ids.add(setup.paired_chat_id)
 
     connector = TelegramConnector(config)
 
@@ -120,6 +128,7 @@ def build_app(config_path: Path | str) -> tuple[Application, BotContext]:
         pending_work=pending,
         runners=runners,
         workers=worker_manager,
+        setup=setup,
     )
 
     # Wire core handlers (commands + media)
@@ -132,19 +141,47 @@ def build_app(config_path: Path | str) -> tuple[Application, BotContext]:
     # Register /capabilities AFTER plugins so it can read the capabilities dict.
     capabilities_handler.register(ctx)
 
+    # Build the capability manifest once and stash it so the ALMA wizard can
+    # re-apply it after writing a new system instruction.
+    manifest = _build_capabilities_manifest(ctx)
+    ctx.shared["capabilities_manifest"] = manifest
+
     # Optionally append the capability manifest to the bot-wide system instruction.
     # Only takes effect if at least one runner uses config.system_instruction (its
     # own per-runner system_instruction would override).
-    if config.include_capabilities_in_system_instruction:
-        manifest = _build_capabilities_manifest(ctx)
-        if manifest:
-            config.system_instruction = (config.system_instruction or "") + "\n\n" + manifest
-            log.info(
-                "Appended capabilities manifest (%d chars) to system_instruction.",
-                len(manifest),
-            )
+    if config.include_capabilities_in_system_instruction and manifest:
+        config.system_instruction = (config.system_instruction or "") + "\n\n" + manifest
+        log.info(
+            "Appended capabilities manifest (%d chars) to system_instruction.",
+            len(manifest),
+        )
+
+    # Onboarding wizard — high-priority handler that drives first-run setup and
+    # self-disables once stage == done.
+    onboarding.register(ctx)
+    if not setup.is_done:
+        _announce_pairing(setup)
 
     return app, ctx
+
+
+def _announce_pairing(setup: SetupState) -> None:
+    """Print the pairing code prominently so the operator can claim the bot."""
+    if setup.stage == "pairing":
+        code = setup.pairing_code
+        banner = (
+            "\n"
+            "============================================================\n"
+            "  maxbot is NOT yet paired.\n"
+            f"  Open Telegram, message your bot, and send this code:\n\n"
+            f"        PAIRING CODE:  {code}\n\n"
+            "  The first chat to send it becomes the bot's owner.\n"
+            "============================================================\n"
+        )
+        print(banner)
+        log.warning("Pairing required — code: %s", code)
+    else:
+        log.info("Onboarding in progress (stage: %s)", setup.stage)
 
 
 def _build_capabilities_manifest(ctx: BotContext) -> str:

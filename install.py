@@ -44,6 +44,7 @@ def run(cmd: list[str]) -> None:
 def main() -> int:
     parser = argparse.ArgumentParser(description="Install maxbot.")
     parser.add_argument("--name", default="my-bot", help="Name of the deployment folder to scaffold.")
+    parser.add_argument("--no-prompt", action="store_true", help="Skip the interactive token prompt.")
     args = parser.parse_args()
 
     if sys.version_info < (3, 10):
@@ -67,38 +68,84 @@ def main() -> int:
     # 3. scaffold deployment
     example = ROOT / "deployments" / "example"
     target = ROOT / "deployments" / args.name
+    env_file = target / ".env"
     if target.exists():
         print(f"==> Deployment '{args.name}' already exists — leaving it untouched.")
     else:
         print(f"==> Scaffolding deployment '{args.name}' from the example")
         shutil.copytree(example, target)
         env_example = target / ".env.example"
-        env_file = target / ".env"
         if env_example.exists() and not env_file.exists():
             shutil.copy(env_example, env_file)
+
+    # 3b. The ONLY secret needed up front is the Telegram bot token. Everything
+    # else (which chat owns the bot, which AI agent, its persona) is configured
+    # by talking to the bot itself on Telegram after it starts.
+    if not args.no_prompt and _env_value(env_file, "TELEGRAM_BOT_TOKEN") == "":
+        print(
+            "\n==> Telegram bot token\n"
+            "    Create a bot with @BotFather on Telegram and paste its token here.\n"
+            "    (Leave blank to fill it in later in the .env file.)"
+        )
+        try:
+            token = input("    TELEGRAM_BOT_TOKEN = ").strip()
+        except EOFError:
+            token = ""
+        if token:
+            _set_env_value(env_file, "TELEGRAM_BOT_TOKEN", token)
+            print("    Saved.")
 
     # 4. next steps
     activate = (
         r".venv\Scripts\activate" if os.name == "nt" else "source .venv/bin/activate"
     )
+    have_token = _env_value(env_file, "TELEGRAM_BOT_TOKEN") != ""
+    token_step = (
+        "" if have_token
+        else f"  0. Put your bot token in deployments/{args.name}/.env (TELEGRAM_BOT_TOKEN=...)\n\n"
+    )
     print(
         "\n"
         "============================================================\n"
-        " maxbot is installed.  Two steps left:\n"
+        " maxbot is installed.  Final steps:\n"
         "============================================================\n"
-        f"  1. Edit deployments/{args.name}/.env and set:\n"
-        "       TELEGRAM_BOT_TOKEN=<token from @BotFather>\n"
-        "       ALLOWED_CHAT_IDS=<your Telegram chat id>\n"
-        "\n"
-        "  2. Activate the venv and run the bot:\n"
+        f"{token_step}"
+        "  1. Start the bot:\n"
         f"       {activate}\n"
         f"       maxbot --config deployments/{args.name}/bot.toml\n"
         "\n"
-        "  Tip: validate the config without polling with\n"
-        f"       maxbot --config deployments/{args.name}/bot.toml --check\n"
+        "  2. The console will print a PAIRING CODE. Open Telegram, message\n"
+        "     your bot, and send that code to claim it.\n"
+        "\n"
+        "  3. The bot then walks you through choosing + installing an AI agent\n"
+        "     (Claude Code / Codex), authenticating it, and writing its persona\n"
+        "     — all from the chat. No more files to edit.\n"
         "============================================================\n"
     )
     return 0
+
+
+def _env_value(env_file: Path, key: str) -> str:
+    if not env_file.exists():
+        return ""
+    for line in env_file.read_text(encoding="utf-8").splitlines():
+        if line.strip().startswith(f"{key}="):
+            return line.split("=", 1)[1].strip()
+    return ""
+
+
+def _set_env_value(env_file: Path, key: str, value: str) -> None:
+    lines = env_file.read_text(encoding="utf-8").splitlines() if env_file.exists() else []
+    out, replaced = [], False
+    for line in lines:
+        if line.strip().startswith(f"{key}="):
+            out.append(f"{key}={value}")
+            replaced = True
+        else:
+            out.append(line)
+    if not replaced:
+        out.append(f"{key}={value}")
+    env_file.write_text("\n".join(out) + "\n", encoding="utf-8")
 
 
 if __name__ == "__main__":

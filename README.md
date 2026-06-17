@@ -11,8 +11,8 @@ feature **plugins** you turn on and off from a single config file. Cross-platfor
 
 ## Install (one command)
 
-You need **Python 3.10+** and at least one CLI runner on your PATH — the
-[`claude`](https://docs.claude.com/en/docs/claude-code) CLI and/or the `codex` CLI.
+You need **Python 3.10+**. You do **not** need an AI agent CLI installed up
+front — the bot installs and authenticates it for you during setup.
 
 ```bash
 git clone https://github.com/twine003/maxbot.git
@@ -20,32 +20,36 @@ cd maxbot
 python install.py
 ```
 
-That creates a virtualenv in `.venv/`, installs maxbot into it, and scaffolds a
-ready-to-edit deployment in `deployments/my-bot/`.
+The installer creates a virtualenv in `.venv/`, installs maxbot, scaffolds a
+deployment in `deployments/my-bot/`, and asks you for **one** thing: your
+Telegram bot token (from [@BotFather](https://t.me/BotFather)).
 
 Windows PowerShell equivalent: `.\install.ps1` · Linux/macOS: `./install.sh`
 
-Prefer to install just the package? `pip install git+https://github.com/twine003/maxbot.git`
-
-## Configure (2 fields)
-
-Open `deployments/my-bot/.env` and fill in two values:
-
-```env
-TELEGRAM_BOT_TOKEN=<token from @BotFather>
-ALLOWED_CHAT_IDS=<your numeric chat id, from @userinfobot>
-```
-
-`ALLOWED_CHAT_IDS` is an allow-list — only those chats can talk to the bot.
-
-## Run
+## Run, then finish setup from Telegram
 
 ```bash
 source .venv/bin/activate            # Windows: .venv\Scripts\activate
 maxbot --config deployments/my-bot/bot.toml
 ```
 
-Validate the config first without connecting: add `--check`.
+Everything else is configured by **talking to the bot** — no more files to edit:
+
+1. **Pair it.** The console prints a one-time **pairing code**. Open Telegram,
+   message your bot, and send that code. The first chat to send it becomes the
+   bot's owner (this sets `ALLOWED_CHAT_IDS` automatically; nobody else can use
+   the bot).
+2. **Pick an AI agent.** The bot asks whether you want **Claude Code** or
+   **Codex**, then installs that CLI for you (via npm).
+3. **Authenticate it.** Paste an API key in the chat, or log in via the browser
+   — the bot walks you through it.
+4. **Write its ALMA.** A short guided wizard (6 questions) writes the bot's
+   personality and rules into `system_instruction.md` + a `persona/` folder, and
+   applies it live.
+
+Then just chat. Validate the config without connecting any time with `--check`.
+
+> Re-run onboarding from scratch by deleting `deployments/my-bot/setup_state.json`.
 
 ## Turning plugins on and off
 

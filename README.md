@@ -15,7 +15,7 @@ You need **Python 3.10+** and at least one CLI runner on your PATH — the
 [`claude`](https://docs.claude.com/en/docs/claude-code) CLI and/or the `codex` CLI.
 
 ```bash
-git clone https://github.com/USER/maxbot.git
+git clone https://github.com/twine003/maxbot.git
 cd maxbot
 python install.py
 ```
@@ -25,7 +25,7 @@ ready-to-edit deployment in `deployments/my-bot/`.
 
 Windows PowerShell equivalent: `.\install.ps1` · Linux/macOS: `./install.sh`
 
-Prefer to install just the package? `pip install git+https://github.com/USER/maxbot.git`
+Prefer to install just the package? `pip install git+https://github.com/twine003/maxbot.git`
 
 ## Configure (2 fields)
 

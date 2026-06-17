@@ -58,6 +58,13 @@ enabled = true
 cli = "auto"
 # Codex misbehaves with an identity system prompt (greets every turn). Keep "".
 system_instruction = ""
+# Backend: "app-server" (default) keeps a persistent codex process alive for
+# lower per-turn latency; "exec" runs a one-shot `codex exec` per turn.
+# mode = "app-server"
+# Sandbox for app-server: "danger-full-access" (default, no sandbox),
+# "workspace-write", or "read-only".
+# sandbox = "danger-full-access"
+# model = "gpt-5-codex"   # pin a specific Codex model; omit for the default
 
 [plugins]
 # Add/remove plugin names here, then restart. See each plugin's CONTEXT.md

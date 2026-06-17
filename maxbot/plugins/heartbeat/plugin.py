@@ -165,6 +165,14 @@ class HeartbeatPlugin(Plugin):
         sid, resume = ctx.sessions.get_session(session_key, model)
         runner = ctx.runners.get(model)
 
+        # Persistent backends (e.g. Codex app-server) drive turns over a live
+        # connection, not a one-shot subprocess — use their own oneshot path.
+        if hasattr(runner, "run_oneshot"):
+            text, thread_id = await runner.run_oneshot(prompt, sid, resume)
+            if thread_id:
+                ctx.sessions.mark_initialized(session_key, model, thread_id)
+            return text
+
         # Claude has a build_command(stream=True/False). Codex has a single one.
         if hasattr(runner, "build_command") and "stream" in runner.build_command.__code__.co_varnames:
             cmd = runner.build_command(prompt, sid, resume, stream=True)

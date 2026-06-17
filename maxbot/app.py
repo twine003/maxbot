@@ -23,6 +23,7 @@ from .plugins.loader import load_plugins
 from .runners.base import RunnerRegistry
 from .runners.claude import ClaudeRunner
 from .runners.codex import CodexRunner
+from .runners.codex_appserver import CodexAppServerRunner
 
 log = logging.getLogger(__name__)
 
@@ -33,12 +34,21 @@ _RUNNER_CLASSES = {
 }
 
 
+def _runner_class(name: str, runner_cfg) -> type | None:
+    if name == "codex":
+        # Default to the persistent app-server backend; "exec" keeps the
+        # legacy one-shot `codex exec` runner.
+        mode = (getattr(runner_cfg, "mode", "app-server") or "app-server").lower()
+        return CodexRunner if mode == "exec" else CodexAppServerRunner
+    return _RUNNER_CLASSES.get(name)
+
+
 def build_runner_registry(config: BotConfig, sessions: SessionStore) -> RunnerRegistry:
     registry = RunnerRegistry()
     for name, runner_cfg in config.runners.items():
         if not runner_cfg.enabled:
             continue
-        cls = _RUNNER_CLASSES.get(name)
+        cls = _runner_class(name, runner_cfg)
         if cls is None:
             log.warning("Unknown runner '%s' — skipping", name)
             continue

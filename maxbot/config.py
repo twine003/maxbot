@@ -22,6 +22,12 @@ class RunnerConfig:
     # Optional specific model to pass to the CLI (e.g. "claude-opus-4-8",
     # "claude-sonnet-4-6"). None = let the CLI use its default.
     model: str | None = None
+    # Codex only: "app-server" (persistent JSON-RPC, lower latency) or "exec"
+    # (one-shot `codex exec` per turn). Ignored by other runners.
+    mode: str = "app-server"
+    # Codex only: sandbox policy for the app-server ("danger-full-access" =
+    # no sandbox, the default; "workspace-write"; "read-only").
+    sandbox: str | None = None
 
 
 @dataclass
@@ -155,6 +161,8 @@ def load_config(config_path: Path | str) -> BotConfig:
             if "system_instruction" in body
             else None,
             model=body.get("model"),
+            mode=body.get("mode", "app-server"),
+            sandbox=body.get("sandbox"),
         )
     runners_cfg.setdefault("claude", RunnerConfig())
     runners_cfg.setdefault("codex", RunnerConfig(system_instruction=""))

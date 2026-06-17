@@ -1,0 +1,29 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "maxbot"
+version = "0.1.0"
+description = "Telegram bot framework for Claude/Codex CLIs — pluggable, cross-platform"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [{ name = "José Galarce" }]
+dependencies = [
+    "python-telegram-bot[job-queue]>=21.0",
+    "tomli>=2.0; python_version < '3.11'",
+]
+
+[project.optional-dependencies]
+voice = ["SpeechRecognition>=3.10"]
+
+[project.scripts]
+maxbot = "maxbot.__main__:main"
+
+[tool.setuptools.packages.find]
+include = ["maxbot*"]
+exclude = ["deployments*", "scripts*"]
+
+[tool.setuptools.package-data]
+maxbot = ["plugins/*/CONTEXT.md"]

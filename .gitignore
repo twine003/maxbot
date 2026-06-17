@@ -1,0 +1,40 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.eggs/
+
+# Virtual envs
+.venv/
+venv/
+env/
+
+# ── Per-deployment runtime + secrets ──────────────────────────────────────
+# Never commit secrets or runtime state of ANY deployment. Only the tracked
+# template files in deployments/example/ are meant to be in git.
+deployments/*/.env
+deployments/**/sessions.json
+deployments/**/tasks.json
+deployments/**/pending_work.json
+deployments/**/restart_marker
+deployments/**/media/
+deployments/**/logs/
+deployments/**/data/
+deployments/**/session_memory/
+deployments/**/session_notes/
+deployments/**/browser-profiles/
+deployments/**/persona/
+deployments/**/*.mcp.json
+.mcp.json
+
+# Anything that looks like a secret
+*.pem
+*.key
+secrets.*
+credentials.*
+
+# OS
+.DS_Store
+Thumbs.db

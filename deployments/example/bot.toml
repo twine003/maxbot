@@ -1,0 +1,84 @@
+# Example maxbot deployment config.
+#
+# Copy this whole folder to deployments/<your-name>/ (the installer does it for
+# you), set your token in .env, then run:
+#   maxbot --config deployments/<your-name>/bot.toml
+
+[bot]
+# workspace = where sessions.json, tasks.json, media/, etc. live.
+# Defaults to this config file's directory. "." keeps everything here.
+workspace = "."
+
+# token / allowed_chat_ids fall back to the .env file next to this config:
+#   TELEGRAM_BOT_TOKEN=...      (from @BotFather)
+#   ALLOWED_CHAT_IDS=123456789  (your Telegram numeric chat id; comma-separated for many)
+# You can also hard-code them here instead of .env if you prefer:
+# token = ""
+# allowed_chat_ids = [123456789]
+
+default_model = "claude"
+
+# Inactivity timeout for the runner's output stream (seconds). Long tasks that
+# go quiet for a while won't be killed mid-run. Not a total-duration cap.
+timeout_seconds = 1200
+max_retries = 2
+retry_delay = 3
+media_max_age = 3600
+
+# Telegram streaming throttle. 2.0s ≈ Telegram's ~30 edits/min hard cap.
+progress_min_cooldown = 2.0
+progress_stale_interval = 60
+telegram_msg_max = 4000
+
+# System prompt prepended to every turn. "@file.md" reads from a file next to
+# this config. Edit system_instruction.md to change the bot's personality.
+system_instruction = "@system_instruction.md"
+
+# If true, MAXBOT.md + each enabled plugin's CONTEXT.md are appended to the
+# system instruction at boot, so the bot can self-describe its capabilities.
+include_capabilities_in_system_instruction = true
+
+# Tools the Claude runner is allowed to use (--allowedTools). Trim or expand
+# to taste. MCP tools (mcp__*) only work if you've configured those servers.
+allowed_tools = [
+    "Bash(*)", "Read(*)", "Write(*)", "Edit(*)",
+    "Glob(*)", "Grep(*)", "Task(*)",
+    "WebSearch(*)", "WebFetch(*)",
+    "TodoWrite(*)", "Skill(*)",
+]
+
+[runners.claude]
+enabled = true
+cli = "auto"          # "auto" = autodiscover the `claude` CLI on PATH
+
+[runners.codex]
+enabled = true
+cli = "auto"
+# Codex misbehaves with an identity system prompt (greets every turn). Keep "".
+system_instruction = ""
+
+[plugins]
+# Add/remove plugin names here, then restart. See each plugin's CONTEXT.md
+# (maxbot/plugins/<name>/CONTEXT.md) for the options it accepts.
+#
+#   tasks     — /tarea, /tareas, … schedule prompts (no config needed)
+#   heartbeat — runs scheduled tasks + cleans old media (no config needed)
+#   memory    — /memoria, /recordar, /documentar (needs your own script — see below)
+#   banking   — /informe_balance, /servidores, code intake (example; needs your scripts)
+enabled = ["tasks", "heartbeat"]
+
+[plugins.heartbeat]
+interval_seconds = 1800
+first_run_after = 60
+
+# ── Optional plugins (disabled above). Uncomment after providing the scripts. ──
+
+# [plugins.memory]
+# semantic_memory_script = "./scripts/semantic_memory.py"
+# enable_documentar = false
+
+# [plugins.banking]
+# report_script = "./scripts/generate_report.py"
+# procedure_doc = "./scripts/server_status.md"
+# code_intake_file = "./data/code_pending.json"
+# enable_2fa_intake = true

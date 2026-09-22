@@ -22,6 +22,7 @@ from ._common import (
     CLAUDE_ENV_DROP_PREFIXES,
     find_in_user_local_bin,
     patched_env,
+    resolve_windows_wrapper,
 )
 
 if TYPE_CHECKING:
@@ -38,13 +39,17 @@ class ClaudeRunner(Runner):
 
     def find_executable(self) -> str:
         found = find_in_user_local_bin("claude")
-        if found:
-            return found
-        found = shutil.which("claude")
-        if found:
-            return found
-        log.error("claude executable not found")
-        return "claude"
+        if not found:
+            found = shutil.which("claude")
+        if not found:
+            log.error("claude executable not found")
+            return "claude"
+        # En Windows, `claude` resuelve al .cmd de npm y eso mete cmd.exe en el
+        # medio, que corta el comando en el primer salto de línea del prompt.
+        real = resolve_windows_wrapper(found)
+        if real != found:
+            log.info("claude: uso el binario real %s (evito el wrapper .cmd)", real)
+        return real
 
     def build_command(self, prompt: str, session_id: str | None, resume: bool, *, stream: bool = True) -> list[str]:
         if resume and session_id:
@@ -77,7 +82,7 @@ class ClaudeRunner(Runner):
         text = self.get_system_instruction()
         if not text or not text.strip():
             return None
-        path = self.config.workspace / ".maxbot_claude_system.md"
+        path = self.config.state_dir / ".maxbot_claude_system.md"
         try:
             path.write_text(text, encoding="utf-8")
         except OSError as e:
@@ -117,12 +122,24 @@ class ClaudeRunner(Runner):
             worker.start_time = time.monotonic()
             worker.last_activity = "Pensando..."
             worker.last_progress_sent = time.monotonic()
+            # Un reintento (sesión perdida, formato de salida, etc.) NO debe
+            # dejar otro "Pensando..." colgado en el chat: el usuario ve dos
+            # burbujas para un solo mensaje suyo y parece que el bot se duplicó.
+            # Se reutiliza la burbuja que ya está puesta.
+            msg_previo = worker.stream_msg_id
             reset_stream(worker)
             worker._seen_text_len = 0
 
             try:
-                initial = await bot.send_message(chat_id=chat_id, text="🤔 Pensando...")
-                worker.stream_msg_id = initial.message_id
+                if msg_previo is not None:
+                    try:
+                        await safe_edit(bot, chat_id, msg_previo, "🤔 Pensando...")
+                        worker.stream_msg_id = msg_previo
+                    except Exception as e:
+                        log.warning("no pude reusar el mensaje de progreso: %s", e)
+                if worker.stream_msg_id is None:
+                    initial = await bot.send_message(chat_id=chat_id, text="🤔 Pensando...")
+                    worker.stream_msg_id = initial.message_id
                 worker.stream_last_edit = time.monotonic()
             except Exception as e:
                 log.warning("initial msg send failed: %s", e)
@@ -244,6 +261,10 @@ class ClaudeRunner(Runner):
                     continue
 
                 if result_text is not None:
+                    # El camino sin streaming (fallback de texto) nunca veía un
+                    # evento `result`, así que la sesión se quedaba sin marcar y
+                    # el turno siguiente volvía a chocar. Marcarla aquí también.
+                    self.sessions.mark_initialized(chat_id, "claude", session_id)
                     return RunnerResult(result_text or "(sin respuesta)", session_id=session_id)
 
                 await proc.wait()
@@ -253,6 +274,22 @@ class ClaudeRunner(Runner):
 
                 if "No conversation found" in err:
                     cmd = self.build_command(prompt, session_id, False)
+                    continue
+
+                # "Session ID X is already in use": la conversación YA existe en
+                # disco pero quedó marcada como no inicializada (típico: el bot se
+                # reinició a mitad de turno, o el turno terminó por el camino sin
+                # streaming). Entonces cada mensaje salía con `--session-id`, el CLI
+                # lo rechazaba en 1 segundo y caíamos al fallback de texto: el turno
+                # corría a ciegas y el usuario se quedaba mirando "Pensando..." varios
+                # minutos. Reanudar SIN perder el streaming y dejar la marca puesta.
+                if "already in use" in err:
+                    log.info(
+                        "Worker[%d] sesión ya existe en disco → --resume conservando streaming",
+                        chat_id,
+                    )
+                    self.sessions.mark_initialized(chat_id, "claude", session_id)
+                    cmd = self.build_command(prompt, session_id, True, stream=use_stream)
                     continue
 
                 if use_stream and attempt == 1:

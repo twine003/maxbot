@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import re
 import sys
 from pathlib import Path
 
@@ -49,6 +50,47 @@ def find_in_npm_globals(executable: str) -> str | None:
         if Path(c).exists():
             return c
     return None
+
+
+_WRAPPER_TARGET_RE = re.compile(r'"%dp0%\\?([^"]+\.exe)"', re.IGNORECASE)
+
+
+def resolve_windows_wrapper(path: str) -> str:
+    """Windows: cambiar el `.cmd` de npm por el ejecutable real al que llama.
+
+    Lanzar un `.cmd` obliga a Windows a meter `cmd.exe /c` en el medio, y
+    cmd.exe CORTA la línea de comandos en el primer salto de línea que traiga un
+    argumento. No se pierde solo el resto del texto: se pierden TODAS las
+    banderas que venían después (`--resume`, `--append-system-prompt-file`,
+    `--output-format`, `--allowedTools`…), así que el turno corre sin sesión,
+    sin identidad y sin streaming.
+
+    Comprobado el 2026-09-11 con el CLI real: un prompt de dos líneas pasado por
+    `claude.cmd` llegó al modelo con una sola línea ("tu mensaje tiene una sola
+    línea", respondió), y pasado al `.exe` directamente llegó entero. En
+    Telegram esto se dispara con CUALQUIER mensaje de varias líneas.
+
+    Devuelve la ruta original si no es un wrapper o si no se puede resolver.
+    """
+    if sys.platform != "win32":
+        return path
+    p = Path(path)
+    if p.suffix.lower() not in (".cmd", ".bat"):
+        return path
+    try:
+        texto = p.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return path
+    for m in _WRAPPER_TARGET_RE.finditer(texto):
+        destino = p.parent / m.group(1)
+        if destino.exists():
+            return str(destino)
+    hermano = p.with_suffix(".exe")
+    if hermano.exists():
+        return str(hermano)
+    # Wrappers que llaman a un .js por node (p.ej. codex.cmd) siguen pasando por
+    # cmd.exe: para esos habría que invocar `node <script>`, que es otro cambio.
+    return path
 
 
 def resolve_user_home(executable_path: str) -> Path:

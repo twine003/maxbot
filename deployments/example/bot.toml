@@ -9,6 +9,11 @@
 # Defaults to this config file's directory. "." keeps everything here.
 workspace = "."
 
+# Where THIS deployment keeps its own files (sessions, tasks, media).
+# Defaults to `workspace`. Set it to "." when the deployment folder lives
+# OUTSIDE the project above, so the bot state stays here and not in there.
+# state_dir = "."
+
 # token / allowed_chat_ids fall back to the .env file next to this config:
 #   TELEGRAM_BOT_TOKEN=...      (from @BotFather)
 #   ALLOWED_CHAT_IDS=123456789  (your Telegram numeric chat id; comma-separated for many)

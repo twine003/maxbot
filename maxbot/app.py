@@ -5,8 +5,8 @@ from __future__ import annotations
 import logging
 from pathlib import Path
 
-from telegram import BotCommand
-from telegram.ext import Application
+from telegram import BotCommand, Update
+from telegram.ext import Application, TypeHandler
 
 from .config import BotConfig, load_config
 from .connectors.telegram.connector import TelegramConnector
@@ -75,9 +75,10 @@ def build_app(config_path: Path | str) -> tuple[Application, BotContext]:
 
     # First-run onboarding. A previously-paired chat is added to the allowlist so
     # auth keeps working across restarts.
-    setup = SetupState(config.workspace / "setup_state.json")
+    setup = SetupState(config.state_dir / "setup_state.json")
     if setup.paired_chat_id is not None:
         config.allowed_chat_ids.add(setup.paired_chat_id)
+    config.allowed_chat_ids.update(setup.allowed_chat_ids)
 
     connector = TelegramConnector(config)
 
@@ -89,6 +90,7 @@ def build_app(config_path: Path | str) -> tuple[Application, BotContext]:
         BotCommand("change_model", "Cambiar runner activo"),
         BotCommand("status", "Estado del worker actual"),
         BotCommand("cancelar", "Cancelar tarea en curso"),
+        BotCommand("invitar", "Invitar a otra persona o grupo (solo el dueño)"),
         BotCommand("capabilities", "Mostrar capacidades + plugins"),
         BotCommand("help", "Alias de /capabilities"),
     ]
@@ -142,6 +144,39 @@ def build_app(config_path: Path | str) -> tuple[Application, BotContext]:
     )
 
     # Wire core handlers (commands + media)
+    # Rastro de TODO lo que llega, antes de cualquier filtro. Sin esto, un
+    # mensaje de un chat no autorizado se descarta sin una sola línea de log
+    # (`is_allowed` → `return` mudo), y es imposible distinguir "el bot no
+    # recibió nada" de "lo recibió y lo ignoró" — que es justo lo que hay que
+    # saber cuando alguien dice "le escribí y no pasó nada".
+    # Va en su propio grupo (-100) para no competir con el wizard (-50).
+    _UPDATE_KINDS = (
+        "message", "edited_message", "channel_post", "callback_query",
+        "my_chat_member", "chat_member", "chat_join_request",
+    )
+
+    async def _log_update(update: Update, _context) -> None:
+        chat = update.effective_chat
+        user = update.effective_user
+        msg = update.effective_message
+        kind = next((k for k in _UPDATE_KINDS if getattr(update, k, None) is not None), "otro")
+        texto = ""
+        if msg is not None:
+            texto = (msg.text or msg.caption or "")[:60]
+        log.info(
+            "update %s: chat=%s (%s %r) user=%s (%s) permitido=%s texto=%r",
+            kind,
+            chat.id if chat else None,
+            chat.type if chat else None,
+            (chat.title if chat else "") or "",
+            user.id if user else None,
+            (user.full_name if user else "") or "",
+            (chat.id in config.allowed_chat_ids) if chat else None,
+            texto,
+        )
+
+    app.add_handler(TypeHandler(Update, _log_update), group=-100)
+
     core_handlers.register(ctx)
     message_handlers.register(ctx)
 

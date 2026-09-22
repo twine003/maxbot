@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import json
 import secrets
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
@@ -91,6 +92,58 @@ class SetupState:
     def paired_chat_id(self, value: int) -> None:
         self._d["paired_chat_id"] = int(value)
         self.save()
+
+    @property
+    def owner_user_id(self) -> int | None:
+        """Telegram user id of whoever sent the pairing code. Falls back to
+        `paired_chat_id` for states written before this field existed (a
+        private chat id equals the user id, so the fallback is exact there)."""
+        v = self._d.get("owner_user_id")
+        if v is None:
+            v = self._d.get("paired_chat_id")
+        return int(v) if v is not None else None
+
+    @owner_user_id.setter
+    def owner_user_id(self, value: int) -> None:
+        self._d["owner_user_id"] = int(value)
+        self.save()
+
+    @property
+    def allowed_chat_ids(self) -> set[int]:
+        raw = self._d.get("allowed_chat_ids", [])
+        return {int(v) for v in raw}
+
+    def add_allowed_chat_id(self, value: int) -> None:
+        ids = self.allowed_chat_ids
+        ids.add(int(value))
+        self._d["allowed_chat_ids"] = sorted(ids)
+        self.save()
+
+    # ----- invitación de un solo uso -----
+    # El `pairing_code` es permanente y solo lo acepta el dueño, así que no
+    # sirve para dar acceso a otra persona (ella lo enviaría desde SU chat y
+    # sería rechazada). La invitación es lo contrario: la genera el dueño con
+    # /invitar, la usa alguien más, vale una sola vez y vence.
+    @property
+    def invite(self) -> dict[str, Any] | None:
+        inv = self._d.get("invite")
+        return inv if isinstance(inv, dict) else None
+
+    def new_invite(self, ttl_minutes: int = 60, created_by: int | None = None) -> dict[str, Any]:
+        expires = datetime.now(timezone.utc) + timedelta(minutes=ttl_minutes)
+        inv = {
+            "code": _gen_pairing_code(),
+            "expires_at": expires.isoformat(),
+            "created_by": int(created_by) if created_by is not None else None,
+        }
+        self._d["invite"] = inv
+        self.save()
+        return inv
+
+    def clear_invite(self) -> None:
+        if "invite" in self._d:
+            del self._d["invite"]
+            self.save()
 
     # ----- agent -----
     @property

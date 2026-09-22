@@ -19,17 +19,19 @@ None — this plugin only schedules a background job. Tasks are managed via the 
 |---|---|---|---|
 | `interval_seconds` | int | 1800 | How often the tick fires (30 min). |
 | `first_run_after` | int | 60 | Seconds after boot before the first tick. |
+| `target_chat_id` | int | (paired chat) | Chat that receives task output. Default: the chat that paired the bot (the owner). Must be an allowed chat, otherwise it is ignored with a warning. |
 
 ```toml
 [plugins.heartbeat]
 interval_seconds = 1800
 first_run_after = 60
+# target_chat_id = 123456789   # only if tasks should NOT go to the owner's chat
 ```
 
 ## Dependencies
 
 - A runner must be configured and active — task prompts are executed by whichever runner is active for the target chat.
-- `[bot].allowed_chat_ids` must be non-empty — tasks fire into the first allowed chat id.
+- `[bot].allowed_chat_ids` must be non-empty — tasks fire into `target_chat_id` if set, else the chat that paired the bot, else the lowest allowed chat id. When a group is authorized next to the owner's private chat, task output still goes to the owner.
 
 ## First-time setup
 

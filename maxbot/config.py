@@ -39,7 +39,12 @@ class PluginsConfig:
 
 @dataclass
 class BotConfig:
+    # Where the runner is launched (its cwd). Point this at the project the bot
+    # works on, so that project's own agent files (CLAUDE.md, AGENTS.md, ...) load.
     workspace: Path
+    # Where this deployment keeps its own files (sessions, tasks, media, ...).
+    # Defaults to `workspace`, so existing deployments keep working unchanged.
+    state_dir: Path
     config_path: Path
     token: str
     allowed_chat_ids: set[int]
@@ -60,23 +65,23 @@ class BotConfig:
 
     @property
     def sessions_file(self) -> Path:
-        return self.workspace / "sessions.json"
+        return self.state_dir / "sessions.json"
 
     @property
     def tasks_file(self) -> Path:
-        return self.workspace / "tasks.json"
+        return self.state_dir / "tasks.json"
 
     @property
     def pending_work_file(self) -> Path:
-        return self.workspace / "pending_work.json"
+        return self.state_dir / "pending_work.json"
 
     @property
     def media_dir(self) -> Path:
-        return self.workspace / "media"
+        return self.state_dir / "media"
 
     @property
     def restart_marker(self) -> Path:
-        return self.workspace / "restart_marker"
+        return self.state_dir / "restart_marker"
 
 
 def _load_env_file(env_file: Path) -> None:
@@ -109,6 +114,9 @@ def load_config(config_path: Path | str) -> BotConfig:
     Resolution order for the workspace:
       1. [bot].workspace (absolute, or relative to the config file dir)
       2. The config file's parent directory (default)
+
+    [bot].state_dir is resolved the same way and defaults to the workspace. Set
+    it when the deployment folder is NOT inside the project the bot works on.
     """
     config_path = Path(config_path).resolve()
     if not config_path.exists():
@@ -126,6 +134,18 @@ def load_config(config_path: Path | str) -> BotConfig:
     else:
         workspace = config_dir
     workspace.mkdir(parents=True, exist_ok=True)
+
+    # state_dir lets a deployment live outside the project it works on: the
+    # runner still runs inside that project (workspace), but sessions, tasks and
+    # media stay in the deployment folder. Defaults to workspace.
+    state_raw = bot_section.get("state_dir")
+    if state_raw:
+        state_dir = Path(state_raw)
+        if not state_dir.is_absolute():
+            state_dir = (config_dir / state_dir).resolve()
+    else:
+        state_dir = workspace
+    state_dir.mkdir(parents=True, exist_ok=True)
 
     env_file = bot_section.get("env_file")
     if env_file:
@@ -181,6 +201,7 @@ def load_config(config_path: Path | str) -> BotConfig:
 
     return BotConfig(
         workspace=workspace,
+        state_dir=state_dir,
         config_path=config_path,
         token=token,
         allowed_chat_ids=allowed,

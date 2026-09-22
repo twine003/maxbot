@@ -40,6 +40,8 @@ def _build_summary(ctx: "BotContext") -> str:
         "*maxbot capabilities*",
         "",
         f"Workspace: `{ctx.config.workspace}`",
+        *( [f"State dir: `{ctx.config.state_dir}`"]
+           if ctx.config.state_dir != ctx.config.workspace else [] ),
         f"Runners disponibles: {', '.join(runners)} (default: {active_runner})",
         "",
         "*Comandos base*",

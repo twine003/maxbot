@@ -16,6 +16,13 @@ maxbot is a Telegram bot framework built around three pluggable concepts:
 
 A **deployment** lives in `deployments/<name>/`, owns its `bot.toml` + `.env` + state files, and is what gets shipped to a Windows machine or a Linux server.
 
+> **`workspace` vs `state_dir`.** `workspace` is where the runner is launched — point it at
+> the project the bot works on, so that project's own agent files (`CLAUDE.md`, `AGENTS.md`)
+> load automatically. `state_dir` is where this deployment keeps its own files (sessions,
+> tasks, media, setup state); it defaults to `workspace`. Set it when the deployment folder
+> lives **outside** the project the bot operates on, so the bot's runtime files do not end up
+> inside that project.
+
 ## Architecture
 
 ```

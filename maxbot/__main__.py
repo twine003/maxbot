@@ -29,10 +29,14 @@ def main() -> int:
     )
     args = parser.parse_args()
 
+    log_level = getattr(logging, args.log_level.upper(), logging.INFO)
     logging.basicConfig(
         format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
-        level=getattr(logging, args.log_level.upper(), logging.INFO),
+        level=log_level,
     )
+    if log_level > logging.DEBUG:
+        logging.getLogger("httpx").setLevel(logging.WARNING)
+        logging.getLogger("httpcore").setLevel(logging.WARNING)
     log = logging.getLogger("maxbot")
 
     try:

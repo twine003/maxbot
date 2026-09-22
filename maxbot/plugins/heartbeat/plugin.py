@@ -3,6 +3,8 @@
 Options (from `[plugins.heartbeat]` in bot.toml):
     interval_seconds = 1800   # default 30 min
     first_run_after  = 60     # seconds before the first tick after boot
+    target_chat_id   = 123    # optional: chat that receives task output.
+                              # Default: the chat that paired the bot (owner).
 """
 
 from __future__ import annotations
@@ -82,6 +84,33 @@ class HeartbeatPlugin(Plugin):
         )
         log.info("Heartbeat scheduled every %d seconds", interval)
 
+    def _target_chat(self, ctx: "BotContext") -> int:
+        """Chat that receives scheduled-task output.
+
+        Precedence: `target_chat_id` option → the chat that paired the bot
+        (the owner) → lowest allowed id. Never `next(iter(set))`: once a group
+        is authorized alongside the owner's private chat, set order is
+        arbitrary and the morning summary could land in the group.
+        """
+        allowed = ctx.config.allowed_chat_ids
+        explicit = self.options.get("target_chat_id")
+        if explicit is not None:
+            try:
+                explicit = int(explicit)
+            except (TypeError, ValueError):
+                log.warning("Heartbeat: target_chat_id=%r is not an int, ignoring", explicit)
+            else:
+                if explicit in allowed:
+                    return explicit
+                log.warning(
+                    "Heartbeat: target_chat_id=%s is not an allowed chat, ignoring", explicit
+                )
+        setup = getattr(ctx, "setup", None)
+        paired = setup.paired_chat_id if setup is not None else None
+        if paired is not None and paired in allowed:
+            return paired
+        return min(allowed)
+
     async def _tick(self, ctx: "BotContext") -> None:
         cfg = ctx.config
         bot = ctx.connector.bot
@@ -101,7 +130,7 @@ class HeartbeatPlugin(Plugin):
         if not cfg.allowed_chat_ids:
             log.info("Heartbeat: no allowed_chat_ids, skipping task execution")
             return
-        target_chat = next(iter(cfg.allowed_chat_ids))
+        target_chat = self._target_chat(ctx)
 
         for task in tasks["recurring"]:
             if not task.get("enabled", True):

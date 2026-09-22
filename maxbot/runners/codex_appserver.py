@@ -43,10 +43,12 @@ log = logging.getLogger(__name__)
 class CodexAppServerClient:
     """Persistent JSON-RPC client over a `codex app-server` stdio process."""
 
-    def __init__(self, executable: str, cwd: str, env: dict):
+    def __init__(self, executable: str, cwd: str, env: dict,
+                 config_overrides: dict[str, str] | None = None):
         self._executable = executable
         self._cwd = cwd
         self._env = env
+        self._config_overrides = config_overrides or {}
         self._proc: asyncio.subprocess.Process | None = None
         self._reader_task: asyncio.Task | None = None
         self._next_id = 0
@@ -62,6 +64,13 @@ class CodexAppServerClient:
 
     def _argv(self) -> list[str]:
         base = ["app-server", "--listen", "stdio://"]
+        # Enforce policy at the process level with -c overrides: the JSON-RPC
+        # param names for sandbox/approvals have drifted across codex versions
+        # (validated on 0.125.0; silently ignored on 0.142.x), so relying on
+        # newConversation params alone can leave turns in the default sandbox
+        # (network blocked). -c wins over ~/.codex/config.toml and is stable.
+        for key, value in self._config_overrides.items():
+            base += ["-c", f'{key}="{value}"']
         # .cmd / .bat shims on Windows must go through cmd.exe.
         if sys.platform == "win32" and self._executable.lower().endswith((".cmd", ".bat")):
             return ["cmd", "/c", self._executable, *base]
@@ -234,7 +243,14 @@ class CodexAppServerRunner(Runner):
     def _get_client(self) -> CodexAppServerClient:
         if self._client is None:
             env = patched_env(self.executable)
-            self._client = CodexAppServerClient(self.executable, str(self.config.workspace), env)
+            overrides = {
+                "sandbox_mode": self.runner_config.sandbox or "danger-full-access",
+                "approval_policy": "never",
+            }
+            self._client = CodexAppServerClient(
+                self.executable, str(self.config.workspace), env,
+                config_overrides=overrides,
+            )
         return self._client
 
     def _thread_params(self) -> dict:

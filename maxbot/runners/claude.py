@@ -51,7 +51,10 @@ class ClaudeRunner(Runner):
             log.info("claude: uso el binario real %s (evito el wrapper .cmd)", real)
         return real
 
-    def build_command(self, prompt: str, session_id: str | None, resume: bool, *, stream: bool = True) -> list[str]:
+    def build_command(
+        self, prompt: str, session_id: str | None, resume: bool, *, stream: bool = True,
+        allowed_tools: list[str] | None = None,
+    ) -> list[str]:
         if resume and session_id:
             cmd = [self.executable, "-p", prompt, "--resume", session_id]
         else:
@@ -71,7 +74,8 @@ class ClaudeRunner(Runner):
             # --include-partial-messages → emits content_block_delta events letter-by-letter
             # (Anthropic SDK format), enabling ChatGPT/clawdbot-style live streaming.
             cmd += ["--output-format", "stream-json", "--verbose", "--include-partial-messages"]
-        for tool in self.config.allowed_tools:
+        # `allowed_tools` lets a caller narrow one turn (see runners/oneshot.py).
+        for tool in self.config.allowed_tools if allowed_tools is None else allowed_tools:
             cmd += ["--allowedTools", tool]
         return cmd
 

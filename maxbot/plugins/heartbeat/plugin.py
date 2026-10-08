@@ -17,7 +17,7 @@ from datetime import datetime, timedelta, timezone
 from typing import TYPE_CHECKING
 
 from ...connectors.telegram.ui.attachments import send_long_to_chat
-from ...runners._common import CLAUDE_ENV_DROP, CLAUDE_ENV_DROP_PREFIXES, patched_env
+from ...runners.oneshot import run_oneshot
 from ..base import Plugin
 
 
@@ -185,95 +185,9 @@ class HeartbeatPlugin(Plugin):
         session_key: str,
         chat_id: int,
     ) -> str:
-        """Run one CLI turn with no live streaming — heartbeat output goes via send_long.
-
-        Uses the runner's build_command but parses minimal events (just enough
-        to extract the final text and persist the session id).
-        """
+        """Run one CLI turn with no live streaming — heartbeat output goes via send_long."""
         model = ctx.sessions.get_active_model(chat_id)
-        sid, resume = ctx.sessions.get_session(session_key, model)
-        runner = ctx.runners.get(model)
-
-        # Persistent backends (e.g. Codex app-server) drive turns over a live
-        # connection, not a one-shot subprocess — use their own oneshot path.
-        if hasattr(runner, "run_oneshot"):
-            text, thread_id = await runner.run_oneshot(prompt, sid, resume)
-            if thread_id:
-                ctx.sessions.mark_initialized(session_key, model, thread_id)
-            return text
-
-        # Claude has a build_command(stream=True/False). Codex has a single one.
-        if hasattr(runner, "build_command") and "stream" in runner.build_command.__code__.co_varnames:
-            cmd = runner.build_command(prompt, sid, resume, stream=True)
-        else:
-            cmd = runner.build_command(prompt, sid, resume)
-
-        if model == "claude":
-            env = patched_env(
-                runner.executable,
-                drop_keys=CLAUDE_ENV_DROP,
-                drop_prefixes=CLAUDE_ENV_DROP_PREFIXES,
-            )
-        else:
-            env = patched_env(runner.executable)
-
-        proc = await asyncio.create_subprocess_exec(
-            *cmd,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-            cwd=str(ctx.config.workspace),
-            env=env,
-            limit=10 * 1024 * 1024,
-        )
-
-        result_text: str | None = None
-        current_session_id = sid
-        try:
-            while True:
-                try:
-                    raw_line = await asyncio.wait_for(
-                        proc.stdout.readline(), timeout=ctx.config.timeout_seconds,
-                    )
-                except asyncio.TimeoutError:
-                    proc.kill()
-                    await proc.wait()
-                    break
-                if not raw_line:
-                    break
-                line = raw_line.decode("utf-8", errors="replace").strip()
-                if not line:
-                    continue
-                try:
-                    event = json.loads(line)
-                except json.JSONDecodeError:
-                    continue
-                if model == "codex":
-                    if event.get("type") == "thread.started":
-                        current_session_id = event.get("thread_id") or current_session_id
-                        continue
-                    if event.get("type") == "item.completed":
-                        item = event.get("item", {})
-                        if item.get("type") == "agent_message":
-                            result_text = item.get("text", "")
-                        elif item.get("type") == "error":
-                            result_text = f"Error de Codex: {item.get('message', 'unknown error')}"
-                        continue
-                    if event.get("type") == "turn.completed":
-                        if current_session_id:
-                            ctx.sessions.mark_initialized(session_key, model, current_session_id)
-                        break
-                    if event.get("type") == "turn.failed":
-                        result_text = f"Error de Codex: {event.get('error', {}).get('message', 'unknown error')}"
-                        break
-                else:  # claude
-                    if event.get("type") == "result":
-                        result_text = event.get("result", "")
-                        ctx.sessions.mark_initialized(session_key, model, current_session_id)
-                        break
-        except Exception as e:
-            proc.kill()
-            await proc.wait()
-            log.error("Heartbeat oneshot error: %s", e)
-
-        await proc.wait()
-        return result_text or "(sin respuesta de heartbeat)"
+        result = await run_oneshot(ctx.config, ctx.sessions, ctx.runners, prompt, session_key, model)
+        if result.text == "(sin respuesta)":
+            return "(sin respuesta de heartbeat)"
+        return result.text
